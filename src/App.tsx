@@ -1,128 +1,98 @@
-import "./styles.css";
+import { useEffect, useState } from "react";
+import Dashboard from "./components/Dashboard";
+import Entry from "./components/Entry";
+import Handover from "./components/Handover";
+import History from "./components/History";
+import Timeline from "./components/Timeline";
+import { fmtClock, fmtDT, fmtDur } from "./format";
+import { currentShift, resetAll, shiftIndex, useStore } from "./store";
+import { HandleModal } from "./HandleModal";
+import { Toaster, toast } from "./toast";
 
-const project = {
-  "sourceNo": 1,
-  "id": "hxyfront-62001",
-  "port": 62001,
-  "title": "船舶轮机值班记录",
-  "domain": "船舶轮机",
-  "prompt": "我想做一个面向船舶轮机值班的前端记录系统，轮机员可以记录主机转速、滑油压力、冷却水温、燃油消耗、舱底水状态和异常巡检项。页面需要有值班班次切换、机舱参数看板、异常记录时间线、交接班摘要和按设备筛选的历史记录。数据先保存在浏览器本地，后续方便扩展成船队统一管理。",
-  "palette": [
-    "#0f766e",
-    "#2563eb",
-    "#f97316"
-  ],
-  "metrics": [
-    "主机转速",
-    "滑油压力",
-    "冷却水温",
-    "燃油消耗"
-  ],
-  "filters": [
-    "主机",
-    "发电机",
-    "泵组",
-    "舱底水"
-  ],
-  "fields": [
-    "值班班次",
-    "设备名称",
-    "参数读数",
-    "异常描述",
-    "处理状态",
-    "交接备注"
-  ],
-  "records": [
-    [
-      "08-12班",
-      "主机",
-      "转速82rpm，滑油压力0.42MPa",
-      "正常巡检"
-    ],
-    [
-      "12-16班",
-      "发电机#2",
-      "冷却水温偏高",
-      "已安排复查"
-    ],
-    [
-      "16-20班",
-      "舱底水",
-      "液位接近警戒线",
-      "已记录交班"
-    ]
-  ]
-};
+const VIEWS = [
+  ["dashboard", "值班看板"],
+  ["entry", "参数录入"],
+  ["history", "历史查询"],
+  ["timeline", "异常时间线"],
+  ["handover", "交接摘要"],
+] as const;
 
-function App() {
+type ViewName = (typeof VIEWS)[number][0];
+
+function Header({ view, go }: { view: ViewName; go: (v: ViewName) => void }) {
+  useStore((s) => s);
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const sh = currentShift();
+  const severe = useStore((s) => s.anomalies.filter((a) => a.shiftId === sh.id && a.level === "severe" && !a.handled).length);
+
+  const onReset = () => {
+    if (window.confirm("将清空全部本地数据并重新生成演示数据，确定？")) {
+      resetAll();
+      toast("数据已重置为演示数据");
+    }
+  };
+
   return (
-    <main className="app">
-      <section className="hero">
-        <p>{project.id} · 源提示词{project.sourceNo} · Port {project.port}</p>
-        <h1>{project.title}</h1>
-        <span>{project.prompt}</span>
-      </section>
-
-      <section className="metrics">
-        {project.metrics.map((metric: string, index: number) => (
-          <article key={metric}>
-            <small>{metric}</small>
-            <strong>{[86, 14, 7, 32][index] ?? 12}</strong>
-          </article>
+    <>
+      <header>
+        <h1>
+          <span className="anchor">⚓</span> 船舶轮机值班台
+        </h1>
+        <div className="shift-hd">
+          <span>
+            当前班：<b>第 {shiftIndex(sh)} 班</b>
+          </span>
+          <span>
+            值班轮机员：<b>{sh.leader || "—"}</b>
+          </span>
+          <span>
+            起：<b>{fmtDT(sh.start)}</b>
+          </span>
+          <span>
+            已历时：<b>{fmtDur(now - sh.start)}</b>
+          </span>
+          {severe > 0 ? (
+            <span className="badge severe">未处理严重异常 {severe}</span>
+          ) : (
+            <span className="badge handled">无未处理严重异常</span>
+          )}
+        </div>
+        <div className="clock">{fmtClock(now)}</div>
+        <button className="btn sm" onClick={onReset} title="清空并重新生成演示数据">
+          重置数据
+        </button>
+      </header>
+      <nav>
+        {VIEWS.map(([k, label]) => (
+          <button key={k} className={view === k ? "active" : ""} onClick={() => go(k)}>
+            {label}
+          </button>
         ))}
-      </section>
-
-      <section className="workspace">
-        <aside className="panel">
-          <h2>{project.domain}筛选</h2>
-          <div className="chips">
-            {project.filters.map((item: string) => (
-              <button key={item}>{item}</button>
-            ))}
-          </div>
-        </aside>
-
-        <section className="panel form-panel">
-          <div className="heading">
-            <div>
-              <p>专业字段</p>
-              <h2>新增记录</h2>
-            </div>
-            <button className="primary">保存草稿</button>
-          </div>
-          <div className="field-grid">
-            {project.fields.map((field: string) => (
-              <label key={field}>
-                <span>{field}</span>
-                <input placeholder={"填写" + field} />
-              </label>
-            ))}
-          </div>
-        </section>
-      </section>
-
-      <section className="panel">
-        <div className="heading">
-          <div>
-            <p>历史记录</p>
-            <h2>近期工作台</h2>
-          </div>
-          <button>导出摘要</button>
-        </div>
-        <div className="records">
-          {project.records.map((record: string[], index: number) => (
-            <article key={record.join("-")}>
-              <b>{String(index + 1).padStart(2, "0")}</b>
-              <div>
-                <h3>{record[0]}</h3>
-                <p>{record.slice(1).join(" · ")}</p>
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
-    </main>
+      </nav>
+    </>
   );
 }
 
-export default App;
+export default function App() {
+  const [view, setView] = useState<ViewName>("dashboard");
+  const go = (v: string) => setView(v as ViewName);
+
+  return (
+    <>
+      <Header view={view} go={setView} />
+      <main>
+        {view === "dashboard" && <Dashboard go={go} />}
+        {view === "entry" && <Entry />}
+        {view === "history" && <History />}
+        {view === "timeline" && <Timeline />}
+        {view === "handover" && <Handover go={go} />}
+      </main>
+      <HandleModal />
+      <Toaster />
+    </>
+  );
+}
